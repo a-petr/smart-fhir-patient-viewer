@@ -4,33 +4,95 @@
   <meta charset="utf-8">
   <title>SMART FHIR Patient Viewer</title>
   <script src="https://cdn.jsdelivr.net/npm/fhirclient/build/fhir-client.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 2rem; }
+    h1 { color: #2c3e50; }
+    .section { margin-top: 2rem; }
+    ul { padding-left: 1.5rem; }
+    .error { color: red; }
+  </style>
 </head>
 <body>
   <h1>SMART on FHIR Patient Viewer</h1>
-  <div id="output">Initializing...</div>
+  <div id="status">Initializing SMART app...</div>
+
+  <div class="section" id="patient"></div>
+  <div class="section" id="allergies"></div>
+  <div class="section" id="conditions"></div>
+  <div class="section" id="medications"></div>
 
   <script>
-    // Check if we're already authorized
-    if (window.location.href.includes("state=")) {
-      // We've been redirected back from the EHR with auth info
-      FHIR.oauth2.ready().then(client => {
-        client.patient.read().then(patient => {
-          const name = patient.name?.[0];
-          const fullName = [name?.given?.join(" "), name?.family].join(" ");
-          document.getElementById("output").innerText = `Hello, ${fullName}!`;
-        });
-      }).catch(error => {
-        console.error("SMART ready() failed", error);
-        document.getElementById("output").innerText = `Error: ${error}`;
-      });
-    } else {
-      // First time: start OAuth2 launch sequence
-      FHIR.oauth2.authorize({
-        clientId: "my-smart-app",
-        scope: "launch openid fhirUser patient/*.read",
-        redirectUri: window.location.href,
-      });
+    function renderPatient(patient) {
+      const name = patient.name?.[0];
+      const fullName = [name?.given?.join(" "), name?.family].join(" ");
+      const birthDate = patient.birthDate || "Unknown";
+      const gender = patient.gender || "Unknown";
+      const id = patient.id;
+
+      document.getElementById("patient").innerHTML = `
+        <h2>Patient Info</h2>
+        <p><strong>Name:</strong> ${fullName}</p>
+        <p><strong>Gender:</strong> ${gender}</p>
+        <p><strong>Birth Date:</strong> ${birthDate}</p>
+        <p><strong>FHIR ID:</strong> ${id}</p>
+      `;
     }
+
+    function renderList(resources, label, elementId, formatFn) {
+      if (!resources.length) {
+        document.getElementById(elementId).innerHTML = `<h2>${label}</h2><p>None found</p>`;
+        return;
+      }
+
+      const items = resources.map(formatFn).map(item => `<li>${item}</li>`).join("");
+      document.getElementById(elementId).innerHTML = `<h2>${label}</h2><ul>${items}</ul>`;
+    }
+
+    function startApp() {
+      if (window.location.href.includes("state=")) {
+        // We're returning from the EHR with state
+        FHIR.oauth2.ready().then(client => {
+          document.getElementById("status").innerText = "Connected to FHIR server.";
+
+          // Patient info
+          client.patient.read().then(patient => renderPatient(patient));
+
+          // Allergies
+          client.request("AllergyIntolerance?patient=" + client.patient.id).then(data => {
+            renderList(data.entry?.map(e => e.resource) || [], "Allergies", "allergies", a =>
+              `${a.code?.text || a.code?.coding?.[0]?.display || "Unknown"} (${a.reaction?.[0]?.manifestation?.[0]?.text || "No reaction info"})`
+            );
+          });
+
+          // Conditions
+          client.request("Condition?patient=" + client.patient.id).then(data => {
+            renderList(data.entry?.map(e => e.resource) || [], "Conditions", "conditions", c =>
+              `${c.code?.text || c.code?.coding?.[0]?.display || "Unknown"} (${c.clinicalStatus?.text || "Unknown status"})`
+            );
+          });
+
+          // Medications
+          client.request("MedicationRequest?patient=" + client.patient.id).then(data => {
+            renderList(data.entry?.map(e => e.resource) || [], "Medications", "medications", m =>
+              `${m.medicationCodeableConcept?.text || m.medicationCodeableConcept?.coding?.[0]?.display || "Unnamed Medication"}`
+            );
+          });
+
+        }).catch(err => {
+          console.error(err);
+          document.getElementById("status").innerHTML = `<p class="error">OAuth2 failed: ${err}</p>`;
+        });
+      } else {
+        // Initial load — start OAuth2 authorization
+        FHIR.oauth2.authorize({
+          clientId: "my-smart-app",
+          scope: "launch openid fhirUser patient/*.read",
+          redirectUri: window.location.href,
+        });
+      }
+    }
+
+    startApp();
   </script>
 </body>
 </html>
