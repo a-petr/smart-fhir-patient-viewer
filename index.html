@@ -2,24 +2,35 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>My SMART App</title>
+  <title>SMART FHIR Patient Viewer</title>
   <script src="https://cdn.jsdelivr.net/npm/fhirclient/build/fhir-client.js"></script>
 </head>
 <body>
-  <h1>My SMART on FHIR App</h1>
-  <div id="output">Loading patient info...</div>
+  <h1>SMART on FHIR Patient Viewer</h1>
+  <div id="output">Initializing...</div>
 
   <script>
-    FHIR.oauth2.ready().then(client => {
-      return client.patient.read().then(patient => {
-        const name = patient.name?.[0];
-        const fullName = [name?.given?.join(" "), name?.family].join(" ");
-        document.getElementById("output").innerText = `Hello, ${fullName}!`;
+    // Check if we're already authorized
+    if (window.location.href.includes("state=")) {
+      // We've been redirected back from the EHR with auth info
+      FHIR.oauth2.ready().then(client => {
+        client.patient.read().then(patient => {
+          const name = patient.name?.[0];
+          const fullName = [name?.given?.join(" "), name?.family].join(" ");
+          document.getElementById("output").innerText = `Hello, ${fullName}!`;
+        });
+      }).catch(error => {
+        console.error("SMART ready() failed", error);
+        document.getElementById("output").innerText = `Error: ${error}`;
       });
-    }).catch(error => {
-      console.error(error);
-      document.getElementById("output").innerText = `Error: ${error}`;
-    });
+    } else {
+      // First time: start OAuth2 launch sequence
+      FHIR.oauth2.authorize({
+        clientId: "my-smart-app",
+        scope: "launch openid fhirUser patient/*.read",
+        redirectUri: window.location.href,
+      });
+    }
   </script>
 </body>
 </html>
