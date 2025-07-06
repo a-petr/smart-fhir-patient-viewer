@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMART Patient Viewer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fhirclient/2.5.2/build/fhir-client.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f7fa;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 600;
+        }
+        .header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            border: 1px solid #e1e8ed;
+        }
+        .card h2 {
+            color: #2c3e50;
+            margin: 0 0 20px 0;
+            font-size: 1.4em;
+            font-weight: 600;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .patient-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .info-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #555;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-value {
+            font-size: 1.1em;
+            color: #2c3e50;
+            margin-top: 5px;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #e74c3c;
+            margin-bottom: 20px;
+        }
+        .vital-signs {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .vital-item {
+            background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .vital-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .vital-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        .no-data {
+            text-align: center;
+            padding: 30px;
+            color: #666;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🏥 SMART Patient Viewer</h1>
+        <p>Displaying patient information from FHIR server</p>
+    </div>
+
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <p>Loading patient data...</p>
+    </div>
+
+    <div id="error" class="error" style="display: none;"></div>
+
+    <div id="content" style="display: none;">
+        <div class="card">
+            <h2>👤 Patient Information</h2>
+            <div id="patient-info" class="patient-info"></div>
+        </div>
+
+        <div class="card">
+            <h2>📊 Recent Vital Signs</h2>
+            <div id="vital-signs" class="vital-signs"></div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize the SMART client
+        FHIR.oauth2.ready()
+            .then(function(client) {
+                console.log('SMART client ready:', client);
+                return loadPatientData(client);
+            })
+            .catch(function(error) {
+                console.error('Error initializing SMART client:', error);
+                showError('Failed to initialize SMART client: ' + error.message);
+            });
+
+        async function loadPatientData(client) {
+            try {
+                // Load patient data
+                const patient = await client.request(`Patient/${client.patient.id}`);
+                console.log('Patient data:', patient);
+                
+                // Load vital signs (observations)
+                const vitals = await client.request(`Observation?patient=${client.patient.id}&category=vital-signs&_sort=-date&_count=10`);
+                console.log('Vital signs:', vitals);
+
+                // Display the data
+                displayPatientInfo(patient);
+                displayVitalSigns(vitals);
+
+                // Hide loading, show content
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('content').style.display = 'block';
+
+            } catch (error) {
+                console.error('Error loading patient data:', error);
+                showError('Failed to load patient data: ' + error.message);
+            }
+        }
+
+        function displayPatientInfo(patient) {
+            const container = document.getElementById('patient-info');
+            
+            // Extract patient information
+            const name = patient.name && patient.name[0] ? 
+                `${patient.name[0].given ? patient.name[0].given.join(' ') : ''} ${patient.name[0].family || ''}`.trim() : 'Unknown';
+            
+            const birthDate = patient.birthDate ? formatDate(patient.birthDate) : 'Unknown';
+            const gender = patient.gender ? patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1) : 'Unknown';
+            const id = patient.id || 'Unknown';
+            
+            // Calculate age
+            const age = patient.birthDate ? calculateAge(patient.birthDate) : 'Unknown';
+            
+            // Get phone and email
+            const phone = patient.telecom ? patient.telecom.find(t => t.system === 'phone')?.value || 'Not provided' : 'Not provided';
+            const email = patient.telecom ? patient.telecom.find(t => t.system === 'email')?.value || 'Not provided' : 'Not provided';
+
+            container.innerHTML = `
+                <div class="info-item">
+                    <div class="info-label">Full Name</div>
+                    <div class="info-value">${name}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Patient ID</div>
+                    <div class="info-value">${id}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Birth Date</div>
+                    <div class="info-value">${birthDate}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Age</div>
+                    <div class="info-value">${age} years</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Gender</div>
+                    <div class="info-value">${gender}</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-label">Phone</div>
+                    <div class="info-value">${phone}</div>
+                </div>
+            `;
+        }
+
+        function displayVitalSigns(vitalsBundle) {
+            const container = document.getElementById('vital-signs');
+            
+            if (!vitalsBundle.entry || vitalsBundle.entry.length === 0) {
+                container.innerHTML = '<div class="no-data">No vital signs data available</div>';
+                return;
+            }
+
+            // Group vitals by type
+            const vitalsByType = {};
+            
+            vitalsBundle.entry.forEach(entry => {
+                const observation = entry.resource;
+                if (observation.code && observation.code.coding) {
+                    const coding = observation.code.coding[0];
+                    const display = coding.display || observation.code.text || 'Unknown';
+                    
+                    if (observation.valueQuantity) {
+                        const value = observation.valueQuantity.value;
+                        const unit = observation.valueQuantity.unit || observation.valueQuantity.code || '';
+                        const date = observation.effectiveDateTime || observation.issued;
+                        
+                        if (!vitalsByType[display] || new Date(date) > new Date(vitalsByType[display].date)) {
+                            vitalsByType[display] = {
+                                value: value,
+                                unit: unit,
+                                date: date
+                            };
+                        }
+                    }
+                }
+            });
+
+            // Display the most recent vitals
+            let vitalsHTML = '';
+            Object.keys(vitalsByType).forEach(vitalType => {
+                const vital = vitalsByType[vitalType];
+                vitalsHTML += `
+                    <div class="vital-item">
+                        <div class="vital-value">${vital.value}</div>
+                        <div class="vital-label">${vitalType}</div>
+                        <div class="vital-label">${vital.unit}</div>
+                    </div>
+                `;
+            });
+
+            container.innerHTML = vitalsHTML || '<div class="no-data">No vital signs data available</div>';
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+        }
+
+        function calculateAge(birthDate) {
+            const today = new Date();
+            const birth = new Date(birthDate);
+            let age = today.getFullYear() - birth.getFullYear();
+            const monthDiff = today.getMonth() - birth.getMonth();
+            
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+                age--;
+            }
+            
+            return age;
+        }
+
+        function showError(message) {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'block';
+            document.getElementById('error').textContent = message;
+        }
+    </script>
+</body>
+</html>
