@@ -84,11 +84,11 @@
         });
       } else {
         // Initial load — start OAuth2 authorization
-        FHIR.oauth2.authorize({
-          clientId: "my-smart-app",
-          scope: "launch openid fhirUser patient/*.read",
-          redirectUri: window.location.href,
-        });
+      FHIR.oauth2.authorize({
+        clientId: "my-smart-app",
+        scope: "launch openid fhirUser patient/*.read",
+        redirectUri: "https://a-petr.github.io/smart-fhir-patient-viewer/index.html",
+      });
       }
     }
 
